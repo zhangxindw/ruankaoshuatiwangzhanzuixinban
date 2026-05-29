@@ -61,7 +61,14 @@ def init_database():
 def handle_chapters():
     if request.method == 'GET':
         chapters = Chapter.query.filter_by(parent_id=None).order_by(Chapter.order).all()
-        return jsonify({'status': 'ok', 'data': [c.to_dict() for c in chapters]})
+        chapters_data = []
+        for c in chapters:
+            chapter_dict = c.to_dict()
+            # 统计该章节的题目数量
+            question_count = Question.query.filter_by(chapter_id=c.id).count()
+            chapter_dict['question_count'] = question_count
+            chapters_data.append(chapter_dict)
+        return jsonify({'status': 'ok', 'data': chapters_data})
     else:
         data = request.json
         chapter = Chapter(
@@ -818,8 +825,23 @@ def clear_wrong_questions():
 def practice_wrong_questions():
     user_id = request.json.get('user_id', 'default_user')
     shuffle = request.json.get('shuffle', True)
+    chapter_ids = request.json.get('chapter_ids', [])
+    
+    # 调试日志
+    print(f"DEBUG - user_id: {user_id}")
+    print(f"DEBUG - chapter_ids: {chapter_ids}")
+    print(f"DEBUG - chapter_ids type: {type(chapter_ids)}")
 
-    wrong_questions = WrongQuestion.query.filter_by(user_id=user_id).all()
+    query = WrongQuestion.query.filter_by(user_id=user_id)
+    
+    # 如果指定了章节，只获取这些章节的错题
+    if chapter_ids and len(chapter_ids) > 0:
+        print(f"DEBUG - Filtering by chapters: {chapter_ids}")
+        query = query.join(Question).filter(Question.chapter_id.in_(chapter_ids))
+    
+    wrong_questions = query.all()
+    print(f"DEBUG - Found {len(wrong_questions)} wrong questions")
+    
     if not wrong_questions:
         return jsonify({'status': 'ok', 'data': [], 'session_id': str(uuid.uuid4())})
 

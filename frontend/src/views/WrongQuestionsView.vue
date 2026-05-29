@@ -6,9 +6,9 @@
         <p>管理所有答错的题目，方便针对性复习</p>
       </div>
       <div>
-        <el-button type="primary" @click="startPractice">
+        <el-button type="primary" @click="showChapterSelectDialog">
           <el-icon><RefreshRight /></el-icon>
-          重新练习
+          刷错题
         </el-button>
         <el-button type="danger" @click="clearAll">
           <el-icon><Delete /></el-icon>
@@ -16,6 +16,37 @@
         </el-button>
       </div>
     </div>
+
+    <!-- 章节选择对话框 -->
+    <el-dialog v-model="chapterSelectVisible" title="选择刷错题范围" width="500px">
+      <div class="chapter-select-content">
+        <div class="chapter-select-header">
+          <el-checkbox v-model="selectAllChapters" @change="handleSelectAll" style="font-weight: 500;">
+            全选所有章节
+          </el-checkbox>
+          <span class="selected-count">已选择 {{ selectedChapterCount }} 个章节</span>
+        </div>
+        <div class="chapter-list">
+          <el-checkbox-group v-model="selectedChapterIds">
+            <div v-for="chapter in store.chapters" :key="chapter.id" class="chapter-item">
+              <el-checkbox :label="chapter.id">
+                <span class="chapter-name">{{ chapter.name }}</span>
+                <el-tag size="small" type="warning" class="chapter-wrong-count">
+                  {{ getChapterWrongCount(chapter.id) }} 错题
+                </el-tag>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="chapterSelectVisible = false">取消</el-button>
+        <el-button type="primary" @click="startPracticeWithChapters">
+          <el-icon><VideoPlay /></el-icon>
+          开始练习
+        </el-button>
+      </template>
+    </el-dialog>
 
     <div class="card">
       <div class="filter-bar" style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
@@ -66,10 +97,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuizStore } from '@/store/quiz'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { VideoPlay, RefreshRight, Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const store = useQuizStore()
@@ -86,6 +118,23 @@ const filters = ref({
   chapter_id: null,
   question_type_id: null
 })
+
+// 章节选择相关
+const chapterSelectVisible = ref(false)
+const selectAllChapters = ref(false)
+const selectedChapterIds = ref([])
+
+const selectedChapterCount = computed(() => {
+  return selectedChapterIds.value.length
+})
+
+// 获取章节的错题数量
+const getChapterWrongCount = (chapterId) => {
+  const chapterWrongQuestions = wrongQuestions.value.filter(wq => {
+    return wq.question && wq.question.chapter_id === chapterId
+  })
+  return chapterWrongQuestions.length
+}
 
 const formatTime = (timeStr) => {
   if (!timeStr) return ''
@@ -109,6 +158,43 @@ const loadWrongQuestions = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const showChapterSelectDialog = () => {
+  selectedChapterIds.value = []
+  selectAllChapters.value = false
+  chapterSelectVisible.value = true
+}
+
+const handleSelectAll = (checked) => {
+  if (checked) {
+    selectedChapterIds.value = store.chapters.map(ch => ch.id)
+  } else {
+    selectedChapterIds.value = []
+  }
+}
+
+const startPracticeWithChapters = async () => {
+  chapterSelectVisible.value = false
+  
+  // 如果没有选择章节，提示用户
+  if (selectedChapterIds.value.length === 0) {
+    ElMessage.warning('请至少选择一个章节')
+    return
+  }
+  
+  // 将章节 ID 转换为整数数组并拼接成字符串
+  const chapterIds = selectedChapterIds.value.map(id => parseInt(id))
+  const chapterIdsStr = chapterIds.join(',')
+  
+  // 直接跳转到练习页面，通过路由参数传递章节 ID
+  router.push({
+    path: '/practice/wrong',
+    query: { 
+      mode: 'wrong',
+      chapters: chapterIdsStr
+    }
+  })
 }
 
 const startPractice = () => {
@@ -150,5 +236,57 @@ onMounted(() => {
 <style scoped>
 .wrong-questions-view {
   padding: 20px;
+}
+
+.chapter-select-content {
+  max-height: 400px;
+}
+
+.chapter-select-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding: 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
+}
+
+.selected-count {
+  font-size: 14px;
+  color: #606266;
+}
+
+.chapter-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.chapter-item {
+  padding: 10px 15px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.chapter-item:hover {
+  background: #f5f7fa;
+}
+
+.chapter-item .el-checkbox {
+  width: 100%;
+}
+
+.chapter-name {
+  font-size: 14px;
+  color: #303133;
+  margin-right: 8px;
+}
+
+.chapter-question-count {
+  float: right;
+}
+
+.chapter-wrong-count {
+  float: right;
 }
 </style>

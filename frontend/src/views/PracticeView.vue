@@ -1,5 +1,5 @@
 <template>
-  <div class="practice-view" :class="eyeProtectionClass">
+  <div class="practice-view" :class="[eyeProtectionClass, `practiceMode-${practiceMode}`]">
     <div class="settings-bar">
       <div class="settings-item">
         <span>护眼模式:</span>
@@ -92,12 +92,14 @@
               <div class="config-card-body">
                 <div class="config-item">
                   <label>选择章节:</label>
-                  <div class="chapter-select-controls" style="display: flex; gap: 10px; align-items: center;">
-                    <el-select v-model="config.chapterIds" multiple placeholder="选择章节（可选）" style="flex: 1;">
+                  <div class="chapter-select-controls">
+                    <el-select v-model="config.chapterIds" multiple placeholder="选择章节（可选）" class="chapter-select">
                       <el-option v-for="ch in chapters" :key="ch.id" :label="ch.name" :value="ch.id" />
                     </el-select>
-                    <el-button class="chapter-select-btn" @click="selectAllChapters" size="small">全选</el-button>
-                    <el-button class="chapter-clear-btn" @click="clearAllChapters" size="small">清空</el-button>
+                    <div class="chapter-select-actions">
+                      <el-button class="chapter-select-btn" @click="selectAllChapters" size="small">全选</el-button>
+                      <el-button class="chapter-clear-btn" @click="clearAllChapters" size="small">清空</el-button>
+                    </div>
                   </div>
                   <span class="config-hint">不选择则从全部题库抽取</span>
                 </div>
@@ -107,14 +109,16 @@
                   <div class="chapter-ratios">
                     <div v-for="chapterId in config.chapterIds" :key="chapterId" class="chapter-ratio-item">
                       <span class="chapter-ratio-label">{{ getChapterName(chapterId) }}</span>
-                      <el-slider
-                        v-model="config.chapterRatios[chapterId]"
-                        :min="0"
-                        :max="100"
-                        :disabled="totalChapterRatio > 100"
-                        show-input
-                        style="flex: 1;"
-                      />
+                      <div class="ratio-input-wrapper">
+                        <el-input-number
+                          v-model="config.chapterRatios[chapterId]"
+                          :min="0"
+                          :max="100"
+                          :disabled="totalChapterRatio > 100"
+                          class="ratio-input"
+                        />
+                        <span class="ratio-unit">%</span>
+                      </div>
                     </div>
                   </div>
                   <div class="ratio-summary" :class="{ 'ratio-error': totalChapterRatio > 100, 'ratio-warning': totalChapterRatio > 0 && totalChapterRatio < 100 }">
@@ -176,7 +180,13 @@
         </div>
 
         <div v-if="practiceMode === 'wrong'" class="config-section">
-          <p>错题本中共 {{ wrongCount }} 道错题</p>
+          <div class="config-item">
+            <label>选择章节（可选）:</label>
+            <el-select v-model="config.chapterIds" multiple placeholder="选择章节（不选则刷全部错题）" style="width: 100%;">
+              <el-option v-for="ch in chapters" :key="ch.id" :label="ch.name" :value="ch.id" />
+            </el-select>
+            <p class="config-hint">错题本中共 {{ wrongCount }} 道错题</p>
+          </div>
         </div>
 
         <el-button type="primary" size="large" @click="startPractice" :disabled="practiceMode === 'sequential' && config.chapterIds.length === 0">
@@ -186,7 +196,7 @@
     </div>
 
     <div v-else class="practice-layout">
-      <div class="practice-left" :style="{ width: leftPanelWidth + 'px' }">
+      <div class="practice-left">
         <div class="question-area">
           <div class="question-header">
             <span class="question-type">{{ currentQuestion?.question_type_name || '单选题' }}</span>
@@ -254,9 +264,9 @@
         </div>
       </div>
 
-      <div class="resize-handle" @mousedown="startResize"></div>
+      <div class="resize-handle" @mousedown="startResize" @touchstart.prevent="startResize"></div>
 
-      <div class="practice-right" :style="{ width: rightPanelWidth + 'px' }">
+      <div class="practice-right">
         <div class="answer-section">
           <div class="answer-header">
             <h3>答案解析</h3>
@@ -412,31 +422,68 @@ const startResize = (e) => {
   isResizing.value = true
   document.addEventListener('mousemove', doResize)
   document.addEventListener('mouseup', stopResize)
+  document.addEventListener('touchmove', doResizeTouch, { passive: false })
+  document.addEventListener('touchend', stopResize)
 }
 
 const doResize = (e) => {
   if (!isResizing.value) return
   const container = document.querySelector('.practice-layout')
-  if (!container) return
+  const leftPanel = document.querySelector('.practice-left')
+  const rightPanel = document.querySelector('.practice-right')
+  if (!container || !leftPanel || !rightPanel) return
+  
   const containerRect = container.getBoundingClientRect()
   const totalWidth = containerRect.width
-  const handleWidth = 8
+  const handleWidth = 16
   
   let newLeftWidth = e.clientX - containerRect.left
   
-  if (newLeftWidth < 300) newLeftWidth = 300
-  if (newLeftWidth > totalWidth - handleWidth - 250) newLeftWidth = totalWidth - handleWidth - 250
+  const minLeftWidth = 280
+  const minRightWidth = 200
   
-  const newRightWidth = totalWidth - newLeftWidth - handleWidth
+  if (newLeftWidth < minLeftWidth) newLeftWidth = minLeftWidth
+  if (newLeftWidth > totalWidth - handleWidth - minRightWidth) newLeftWidth = totalWidth - handleWidth - minRightWidth
   
-  leftPanelWidth.value = newLeftWidth
-  rightPanelWidth.value = newRightWidth
+  const leftPercentage = (newLeftWidth / totalWidth) * 100
+  
+  leftPanel.style.flexBasis = leftPercentage + '%'
+  rightPanel.style.flexBasis = (100 - leftPercentage) + '%'
+}
+
+const doResizeTouch = (e) => {
+  if (!isResizing.value) return
+  e.preventDefault()
+  const touch = e.touches[0]
+  const container = document.querySelector('.practice-layout')
+  const leftPanel = document.querySelector('.practice-left')
+  const rightPanel = document.querySelector('.practice-right')
+  if (!container || !leftPanel || !rightPanel) return
+  
+  const containerRect = container.getBoundingClientRect()
+  const totalWidth = containerRect.width
+  const handleWidth = 16
+  
+  let newLeftWidth = touch.clientX - containerRect.left
+  
+  const minLeftWidth = 280
+  const minRightWidth = 200
+  
+  if (newLeftWidth < minLeftWidth) newLeftWidth = minLeftWidth
+  if (newLeftWidth > totalWidth - handleWidth - minRightWidth) newLeftWidth = totalWidth - handleWidth - minRightWidth
+  
+  const leftPercentage = (newLeftWidth / totalWidth) * 100
+  
+  leftPanel.style.flexBasis = leftPercentage + '%'
+  rightPanel.style.flexBasis = (100 - leftPercentage) + '%'
 }
 
 const stopResize = () => {
   isResizing.value = false
   document.removeEventListener('mousemove', doResize)
   document.removeEventListener('mouseup', stopResize)
+  document.removeEventListener('touchmove', doResizeTouch)
+  document.removeEventListener('touchend', stopResize)
 }
 
 const handleWindowResize = () => {
@@ -739,8 +786,39 @@ const startPractice = async () => {
       })
       questions.value = result.data
     } else if (practiceMode.value === 'wrong') {
-      result = await store.practiceWrongQuestions({ shuffle: true })
-      questions.value = result.data
+      // 检查路由参数中是否有章节选择
+      const chaptersParam = route.query.chapters
+      let apiParams = {
+        user_id: store.userId,
+        shuffle: true
+      }
+      
+      if (chaptersParam) {
+        // 从路由参数获取章节 ID
+        const chapterIds = chaptersParam.split(',').map(id => parseInt(id))
+        console.log('DEBUG: Using route chapter selection:', chapterIds)
+        apiParams.chapter_ids = chapterIds
+      } else if (config.chapterIds.length > 0) {
+        // 用户在练习页面选择了章节，转换为整数
+        const chapterIds = config.chapterIds.map(id => parseInt(id))
+        console.log('DEBUG: Using config chapter selection:', chapterIds)
+        apiParams.chapter_ids = chapterIds
+      } else {
+        // 普通的错题练习（所有错题）
+        console.log('DEBUG: Loading all wrong questions')
+      }
+      
+      console.log('DEBUG: API params:', apiParams)
+      result = await fetch('/api/wrong-questions/practice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(apiParams)
+      }).then(res => res.json())
+      
+      console.log('DEBUG: Practice result:', result)
+      questions.value = result.data || []
     }
 
     practiceStarted.value = true
@@ -748,6 +826,15 @@ const startPractice = async () => {
     showAnswer.value = practiceMode.value === 'memorize'
     await checkFavorite()
   } catch (error) {
+    console.error('ERROR: Failed to start practice:', error)
+    if (error.response) {
+      console.error('ERROR: Response data:', error.response.data)
+      console.error('ERROR: Response status:', error.response.status)
+    } else if (error.request) {
+      console.error('ERROR: No response received:', error.request)
+    } else {
+      console.error('ERROR: Request setup error:', error.message)
+    }
     ElMessage.error('加载题目失败')
   }
 }
@@ -1001,6 +1088,11 @@ onMounted(async () => {
     
     // 初始绑定图片点击事件
     bindImageClickEvents()
+    
+    // 如果是从章节选择进入错题练习，自动开始练习
+    if (practiceMode.value === 'wrong' && route.query.chapters) {
+      await startPractice()
+    }
   } catch (error) {
     console.error('初始化失败:', error)
     ElMessage.error('页面加载失败，请刷新重试')
@@ -1097,12 +1189,15 @@ const bindImageClickEvents = () => {
 
 .start-card {
   background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-  padding: 48px;
+  padding: 40px 48px;
   border-radius: 20px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
   text-align: center;
-  max-width: 500px;
+  max-width: 800px;
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid #f3f4f6;
+  margin: 0 auto;
 }
 
 .start-card h2 {
@@ -1211,19 +1306,110 @@ const bindImageClickEvents = () => {
   font-size: 14px;
 }
 
+.chapter-select-controls {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+}
+
+.chapter-select {
+  flex: 1;
+  min-width: 250px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.chapter-select-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.chapter-select-btn,
+.chapter-clear-btn {
+  white-space: nowrap;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  height: 40px;
+}
+
+.chapter-select-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+}
+
+.chapter-select-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.chapter-clear-btn {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
+.chapter-clear-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+/* 响应式适配 */
+@media screen and (max-width: 640px) {
+  .chapter-select-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .chapter-select {
+    min-width: 100%;
+  }
+  
+  .chapter-select-actions {
+    justify-content: flex-end;
+  }
+}
+
+.chapter-ratios-section {
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
 .chapter-ratios {
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   padding: 20px;
   border-radius: 12px;
   margin-top: 16px;
   border: 1px solid #bae6fd;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .chapter-ratio-item {
-  margin-bottom: 18px;
+  margin-bottom: 15px;
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 20px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  border: 1px solid #e0f2fe;
+  flex-shrink: 0;
 }
 
 .chapter-ratio-item:last-child {
@@ -1231,21 +1417,106 @@ const bindImageClickEvents = () => {
 }
 
 .chapter-ratio-label {
-  min-width: 150px;
+  flex-shrink: 0;
+  min-width: 180px;
+  max-width: 250px;
   font-weight: 600;
   color: #0369a1;
   font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 0;
+}
+
+.ratio-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 180px;
+}
+
+.ratio-input {
+  width: 100%;
+  max-width: 160px;
+  flex-shrink: 0;
+}
+
+.ratio-input .el-input-number__decrease,
+.ratio-input .el-input-number__increase {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
+.ratio-input .el-input-number__input {
+  text-align: center;
+  font-weight: 600;
+  color: #0369a1;
+  font-size: 18px;
+  width: 60px;
+  height: 40px;
+}
+
+.ratio-unit {
+  font-weight: 600;
+  color: #0369a1;
+  font-size: 16px;
+  flex-shrink: 0;
+  padding: 6px 0;
+  min-width: 35px;
+}
+
+/* 响应式适配 */
+@media screen and (max-width: 768px) {
+  .chapter-ratios {
+    padding: 16px;
+  }
+  
+  .chapter-ratio-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px;
+  }
+  
+  .chapter-ratio-label {
+    min-width: auto;
+    max-width: 100%;
+    text-align: left;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  
+  .ratio-input-wrapper {
+    justify-content: flex-start;
+  }
+  
+  .ratio-input {
+    width: 100%;
+    max-width: 180px;
+  }
+  
+  .ratio-input .el-input-number__input {
+    font-size: 20px;
+    width: 70px;
+  }
 }
 
 .ratio-summary {
   margin-top: 16px;
-  padding: 12px 16px;
+  padding: 14px 18px;
   background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #166534;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
   border: 1px solid #86efac;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .ratio-summary.ratio-error {
@@ -1261,24 +1532,32 @@ const bindImageClickEvents = () => {
 }
 
 .config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   margin-bottom: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.config-grid .config-card {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .config-card {
   background: #ffffff;
   border-radius: 16px;
   border: none;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: none;
+  flex-shrink: 0;
 }
 
 .config-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .config-card-header {
@@ -1298,18 +1577,26 @@ const bindImageClickEvents = () => {
 }
 
 .config-card-body {
-  padding: 24px;
+  padding: 20px;
   background: #fafbfc;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: visible;
+  max-height: none;
 }
 
 .config-hint {
-  font-size: 12px !important;
+  font-size: 13px !important;
   color: #6b7280;
-  margin-top: 8px;
-  padding: 8px 12px;
+  margin-top: 10px;
+  padding: 10px 14px;
   background: #f3f4f6;
-  border-radius: 6px;
-  border-left: 3px solid #9ca3af;
+  border-radius: 8px;
+  border-left: 4px solid #9ca3af;
+  font-weight: 500;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .switch-wrapper {
@@ -1484,22 +1771,82 @@ const bindImageClickEvents = () => {
 .practice-layout {
   display: flex;
   width: 100%;
-  max-width: 100%;
+  max-width: 100vw;
   overflow: hidden;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  flex-wrap: nowrap;
 }
 
 .practice-left {
-  min-width: 300px;
-  max-width: calc(100% - 258px);
-  flex-shrink: 0;
+  min-width: 280px;
+  max-width: calc(100% - 200px);
+  flex: 1;
+  flex-basis: 60%;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: relative;
 }
 
 .practice-right {
-  min-width: 250px;
-  max-width: calc(100% - 308px);
-  flex-shrink: 0;
+  min-width: 200px;
+  max-width: calc(100% - 280px);
+  flex: 1;
+  flex-basis: 40%;
   overflow: hidden;
-  width: var(--right-panel-width, 400px);
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* 平板和小屏幕适配 */
+@media screen and (max-width: 768px) {
+  .practice-layout {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .practice-left {
+    min-width: 100%;
+    max-width: 100%;
+    flex-basis: auto;
+    flex-shrink: 0;
+  }
+  
+  .practice-right {
+    min-width: 100%;
+    max-width: 100%;
+    flex-basis: auto;
+    flex-shrink: 0;
+  }
+  
+  .resize-handle {
+    display: none;
+  }
+}
+
+/* 中等屏幕适配 */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .practice-left {
+    flex-basis: 55%;
+    min-width: 250px;
+  }
+  
+  .practice-right {
+    flex-basis: 45%;
+    min-width: 220px;
+  }
+}
+
+/* 大屏适配 */
+@media screen and (min-width: 1025px) {
+  .practice-left {
+    flex-basis: 60%;
+  }
+  
+  .practice-right {
+    flex-basis: 40%;
+  }
 }
 
 /* 最强约束：解析框内所有元素都不允许超出 */
@@ -1524,15 +1871,49 @@ const bindImageClickEvents = () => {
 }
 
 .resize-handle {
-  width: 8px;
+  width: 16px;
   cursor: col-resize;
   background: transparent;
   transition: background 0.2s;
   flex-shrink: 0;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.resize-handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #d1d5db;
+  transform: translateX(-50%);
+  transition: background 0.2s;
+}
+
+.resize-handle:hover::before,
+.resize-handle:active::before {
+  background: #667eea;
 }
 
 .resize-handle:hover {
-  background: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.resize-handle:active {
+  background: rgba(102, 126, 234, 0.2);
+}
+
+/* 触摸优化：增大可触摸区域 */
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  top: 0;
+  bottom: 0;
 }
 
 .question-area {
@@ -2195,5 +2576,66 @@ const bindImageClickEvents = () => {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+
+/* 错题练习模块特殊样式 */
+.practiceMode-wrong .start-card {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: #fed7aa;
+}
+
+.practiceMode-wrong .start-card h2 {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.practiceMode-wrong .start-card .el-button--primary {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  box-shadow: 0 4px 20px rgba(234, 88, 12, 0.4);
+}
+
+.practiceMode-wrong .start-card .el-button--primary:hover {
+  box-shadow: 0 8px 30px rgba(234, 88, 12, 0.5);
+}
+
+.practiceMode-wrong .config-section {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid #fed7aa;
+  box-shadow: 0 4px 16px rgba(234, 88, 12, 0.1);
+}
+
+.practiceMode-wrong .config-item {
+  margin-bottom: 20px;
+}
+
+.practiceMode-wrong .config-item:last-child {
+  margin-bottom: 0;
+}
+
+.practiceMode-wrong .config-item label {
+  color: #9a3412;
+  font-weight: 700;
+  font-size: 15px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.practiceMode-wrong .config-item .el-select {
+  width: 100%;
+}
+
+.practiceMode-wrong .config-hint {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-top: 12px;
+  color: #92400e;
+  font-size: 13px !important;
+  font-weight: 600;
+  border-left: 4px solid #f59e0b;
 }
 </style>

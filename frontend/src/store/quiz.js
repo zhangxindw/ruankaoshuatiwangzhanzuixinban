@@ -189,7 +189,25 @@ export const useQuizStore = defineStore('quiz', {
         user_id: this.userId,
         shuffle
       })
-      this.currentSession = res.data.session_id
+      this.currentSession = {
+        id: res.data.session_id,
+        type: 'wrong_questions',
+        chapter_ids: []
+      }
+      return res.data
+    },
+
+    async practiceWrongQuestionsByChapter(data) {
+      const res = await api.post('/wrong-questions/practice', {
+        user_id: this.userId,
+        shuffle: data.shuffle,
+        chapter_ids: data.chapter_ids
+      })
+      this.currentSession = {
+        id: res.data.session_id,
+        type: 'wrong_questions_by_chapter',
+        chapter_ids: data.chapter_ids
+      }
       return res.data
     },
 
@@ -219,8 +237,9 @@ export const useQuizStore = defineStore('quiz', {
     },
 
     async submitAnswer(questionId, userAnswer) {
+      const session_id = typeof this.currentSession === 'object' ? this.currentSession.id : this.currentSession
       const res = await api.post('/answers', {
-        session_id: this.currentSession || this.userId,
+        session_id: session_id || this.userId,
         question_id: questionId,
         answer: userAnswer,
         user_id: this.userId

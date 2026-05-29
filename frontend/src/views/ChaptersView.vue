@@ -12,6 +12,17 @@
     </div>
 
     <div class="card">
+      <div class="chapter-stats">
+        <div class="stat-item">
+          <span class="stat-label">章节总数</span>
+          <span class="stat-value">{{ totalChapters }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">题目总数</span>
+          <span class="stat-value">{{ totalQuestions }}</span>
+        </div>
+      </div>
+      
       <el-tree
         :data="treeData"
         :props="{ children: 'children', label: 'name' }"
@@ -21,7 +32,14 @@
       >
         <template #default="{ node, data }">
           <span class="tree-node">
-            <span>{{ node.label }}</span>
+            <span class="chapter-info">
+              <el-icon class="chapter-icon"><Folder /></el-icon>
+              <span class="chapter-name">{{ node.label }}</span>
+              <el-tag size="small" type="info" class="question-count-tag">
+                <el-icon><Document /></el-icon>
+                {{ data.question_count || 0 }} 题
+              </el-tag>
+            </span>
             <span class="tree-actions">
               <el-button size="small" type="text" @click.stop="showDialog('createChild', data)">添加子章节</el-button>
               <el-button size="small" type="text" @click.stop="showDialog('edit', data)">编辑</el-button>
@@ -53,6 +71,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useQuizStore } from '@/store/quiz'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Folder, Document, Plus } from '@element-plus/icons-vue'
 
 const store = useQuizStore()
 
@@ -64,6 +83,34 @@ const form = reactive({
   name: '',
   order: 0,
   parent_id: null
+})
+
+const totalChapters = computed(() => {
+  const countChapters = (chapters) => {
+    let count = 0
+    for (const ch of chapters) {
+      count++
+      if (ch.children && ch.children.length > 0) {
+        count += countChapters(ch.children)
+      }
+    }
+    return count
+  }
+  return countChapters(treeData.value)
+})
+
+const totalQuestions = computed(() => {
+  const countQuestions = (chapters) => {
+    let count = 0
+    for (const ch of chapters) {
+      count += (ch.question_count || 0)
+      if (ch.children && ch.children.length > 0) {
+        count += countQuestions(ch.children)
+      }
+    }
+    return count
+  }
+  return countQuestions(treeData.value)
 })
 
 const dialogTitle = computed(() => {
@@ -140,19 +187,95 @@ onMounted(() => {
   padding: 20px;
 }
 
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.chapter-stats {
+  display: flex;
+  gap: 30px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  color: white;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.stat-label {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: bold;
+}
+
 .tree-node {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding-right: 20px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.tree-node:hover {
+  background: #f5f7fa;
+}
+
+.chapter-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.chapter-icon {
+  color: #409EFF;
+  font-size: 18px;
+}
+
+.chapter-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.question-count-tag {
+  margin-left: 8px;
+}
+
+.question-count-tag .el-icon {
+  margin-right: 3px;
 }
 
 .tree-actions {
   display: none;
+  gap: 5px;
 }
 
 .tree-node:hover .tree-actions {
-  display: block;
+  display: flex;
+}
+
+:deep(.el-tree-node__content) {
+  height: auto;
+  padding: 4px 0;
+}
+
+:deep(.el-tree) {
+  background: transparent;
 }
 </style>

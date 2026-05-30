@@ -366,6 +366,67 @@ def upload_questions():
                         wb.close()
                     return jsonify({'status': 'error', 'message': f'Missing required column: {field}'}), 400
 
+            # 处理Excel换行符的函数
+            def process_value(value):
+                if value is None:
+                    return ''
+                s = str(value)
+                # Excel中的换行符通常是 \n，但有时会是 \r\n
+                # 也需要处理单元格内部的换行符
+                s = s.replace('\r\n', '\n').replace('\r', '\n')
+                return s
+
+            # 将换行符转换为HTML的函数，允许安全的HTML标签
+            def to_html(value):
+                if not value:
+                    return ''
+                s = str(value)
+                
+                import re
+                
+                # 允许的标签列表（不区分大小写）
+                allowed_tags = ['img', 'br', 'p', 'div', 'span', 'strong', 'em', 
+                               'b', 'i', 'u', 'ul', 'ol', 'li', 'table', 'tr', 
+                               'td', 'th', 'tbody', 'thead', 'h1', 'h2', 'h3', 
+                               'h4', 'h5', 'h6', 'a', 'pre', 'code', 'hr', 'sub', 'sup']
+                
+                # 分两步处理：先标记允许的标签，再转义其他字符
+                # 第一步：找出所有标签并暂时替换为占位符
+                placeholder_map = {}
+                placeholder_counter = 0
+                
+                # 匹配标签的正则表达式
+                tag_regex = re.compile(r'</?(\w+)[^>]*>', re.IGNORECASE)
+                
+                def tag_replacer(match):
+                    nonlocal placeholder_counter
+                    tag = match.group(1).lower()
+                    if tag in allowed_tags:
+                        placeholder = f'__SAFE_TAG_{placeholder_counter}__'
+                        placeholder_map[placeholder] = match.group(0)
+                        placeholder_counter += 1
+                        return placeholder
+                    else:
+                        # 非允许标签则转义
+                        return f'&lt;{match.group(0)[1:-1]}&gt;'
+                
+                # 替换所有标签为占位符
+                s = tag_regex.sub(tag_replacer, s)
+                
+                # 第二步：转义其他HTML特殊字符
+                s = s.replace('&', '&amp;').replace('"', '&quot;').replace("'", '&#39;')
+                
+                # 注意：我们已经通过占位符处理了<和>
+                
+                # 第三步：处理换行符
+                s = s.replace('\n', '<br>')
+                
+                # 第四步：恢复安全标签
+                for placeholder, original_tag in placeholder_map.items():
+                    s = s.replace(placeholder, original_tag)
+                
+                return s
+
             success_count = 0
             error_rows = []
             duplicate_count = 0
@@ -375,19 +436,19 @@ def upload_questions():
                     continue
 
                 try:
-                    stem = row[header_map['题干']].value
+                    stem = process_value(row[header_map['题干']].value)
                     if not stem or str(stem).strip() == '':
                         error_rows.append({'row': row_num, 'error': '题干为空'})
                         continue
 
-                    option_a = row[header_map['选项A']].value or ''
-                    option_b = row[header_map['选项B']].value or ''
-                    option_c = row[header_map['选项C']].value or ''
-                    option_d = row[header_map['选项D']].value or ''
-                    option_e = row[header_map.get('选项E', -1)].value if '选项E' in header_map else ''
-                    option_f = row[header_map.get('选项F', -1)].value if '选项F' in header_map else ''
+                    option_a = process_value(row[header_map['选项A']].value)
+                    option_b = process_value(row[header_map['选项B']].value)
+                    option_c = process_value(row[header_map['选项C']].value)
+                    option_d = process_value(row[header_map['选项D']].value)
+                    option_e = process_value(row[header_map.get('选项E', -1)].value) if '选项E' in header_map else ''
+                    option_f = process_value(row[header_map.get('选项F', -1)].value) if '选项F' in header_map else ''
                     answer = str(row[header_map['答案']].value or '').upper()
-                    explanation = row[header_map.get('解析', -1)].value if '解析' in header_map else ''
+                    explanation = process_value(row[header_map.get('解析', -1)].value) if '解析' in header_map else ''
                     question_type_name = row[header_map.get('题型', -1)].value if '题型' in header_map else ''
 
                     answer_clean = ''.join(c for c in answer if c in 'ABCDEF')
@@ -416,6 +477,15 @@ def upload_questions():
                             existing.option_f = option_f
                             existing.answer = answer_clean
                             existing.explanation = explanation
+                            # 同时更新HTML版本
+                            existing.stem_html = to_html(stem)
+                            existing.option_a_html = to_html(option_a)
+                            existing.option_b_html = to_html(option_b)
+                            existing.option_c_html = to_html(option_c)
+                            existing.option_d_html = to_html(option_d)
+                            existing.option_e_html = to_html(option_e)
+                            existing.option_f_html = to_html(option_f)
+                            existing.explanation_html = to_html(explanation)
                             if chapter_id:
                                 existing.chapter_id = chapter_id
                             db.session.commit()
@@ -439,6 +509,15 @@ def upload_questions():
                         option_f=option_f,
                         answer=answer_clean,
                         explanation=explanation,
+                        # 添加HTML版本，处理换行符
+                        stem_html=to_html(stem),
+                        option_a_html=to_html(option_a),
+                        option_b_html=to_html(option_b),
+                        option_c_html=to_html(option_c),
+                        option_d_html=to_html(option_d),
+                        option_e_html=to_html(option_e),
+                        option_f_html=to_html(option_f),
+                        explanation_html=to_html(explanation),
                         question_type_id=qtype.id if qtype else None,
                         chapter_id=chapter_id,
                         status='published'

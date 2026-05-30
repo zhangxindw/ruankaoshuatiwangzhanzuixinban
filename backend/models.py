@@ -129,6 +129,7 @@ class WrongQuestion(db.Model):
     user_id = db.Column(db.String(50), nullable=False, default='default_user')
     question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
     wrong_count = db.Column(db.Integer, default=1)
+    reappearance_count = db.Column(db.Integer, default=0)
     first_wrong_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_wrong_at = db.Column(db.DateTime, default=datetime.utcnow)
     question = db.relationship('Question', backref='wrong_records')
@@ -139,6 +140,7 @@ class WrongQuestion(db.Model):
             'user_id': self.user_id,
             'question_id': self.question_id,
             'wrong_count': self.wrong_count,
+            'reappearance_count': self.reappearance_count,
             'first_wrong_at': self.first_wrong_at.isoformat() if self.first_wrong_at else None,
             'last_wrong_at': self.last_wrong_at.isoformat() if self.last_wrong_at else None,
             'question': self.question.to_dict() if self.question else None

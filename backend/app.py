@@ -780,12 +780,15 @@ def handle_wrong_questions():
         per_page = request.args.get('per_page', 20, type=int)
         question_type_id = request.args.get('question_type_id', type=int)
         chapter_id = request.args.get('chapter_id', type=int)
+        min_wrong_count = request.args.get('min_wrong_count', type=int)
 
         query = WrongQuestion.query.filter_by(user_id=user_id)
         if question_type_id:
             query = query.join(Question).filter(Question.question_type_id == question_type_id)
         if chapter_id:
             query = query.join(Question).filter(Question.chapter_id == chapter_id)
+        if min_wrong_count is not None:
+            query = query.filter(WrongQuestion.wrong_count >= min_wrong_count)
 
         pagination = query.order_by(WrongQuestion.last_wrong_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
         return jsonify({
@@ -821,20 +824,38 @@ def clear_wrong_questions():
     db.session.commit()
     return jsonify({'status': 'ok', 'message': 'Cleared all wrong questions'})
 
+@app.route('/api/wrong-questions/batch', methods=['DELETE'])
+def batch_remove_wrong_questions():
+    user_id = request.json.get('user_id', 'default_user')
+    wrong_ids = request.json.get('wrong_ids', [])
+    
+    if not wrong_ids:
+        return jsonify({'status': 'error', 'message': 'No wrong question IDs provided'}), 400
+    
+    deleted_count = WrongQuestion.query.filter(
+        WrongQuestion.user_id == user_id,
+        WrongQuestion.id.in_(wrong_ids)
+    ).delete(synchronize_session=False)
+    
+    db.session.commit()
+    return jsonify({
+        'status': 'ok', 
+        'message': f'Removed {deleted_count} questions from wrong questions book'
+    })
+
 @app.route('/api/wrong-questions/practice', methods=['POST'])
 def practice_wrong_questions():
     user_id = request.json.get('user_id', 'default_user')
     shuffle = request.json.get('shuffle', True)
+    shuffle_options = request.json.get('shuffle_options', True)
     chapter_ids = request.json.get('chapter_ids', [])
     
-    # 调试日志
     print(f"DEBUG - user_id: {user_id}")
     print(f"DEBUG - chapter_ids: {chapter_ids}")
-    print(f"DEBUG - chapter_ids type: {type(chapter_ids)}")
+    print(f"DEBUG - shuffle_options: {shuffle_options}")
 
     query = WrongQuestion.query.filter_by(user_id=user_id)
     
-    # 如果指定了章节，只获取这些章节的错题
     if chapter_ids and len(chapter_ids) > 0:
         print(f"DEBUG - Filtering by chapters: {chapter_ids}")
         query = query.join(Question).filter(Question.chapter_id.in_(chapter_ids))
@@ -845,13 +866,17 @@ def practice_wrong_questions():
     if not wrong_questions:
         return jsonify({'status': 'ok', 'data': [], 'session_id': str(uuid.uuid4())})
 
+    for wq in wrong_questions:
+        wq.reappearance_count += 1
+    db.session.commit()
+
     questions = [wq.question for wq in wrong_questions if wq.question]
     if shuffle:
         random.shuffle(questions)
 
     result = []
     for q in questions:
-        q_dict = q.to_dict(shuffle_options=True)
+        q_dict = q.to_dict(shuffle_options=shuffle_options)
         result.append(q_dict)
 
     session_id = str(uuid.uuid4())

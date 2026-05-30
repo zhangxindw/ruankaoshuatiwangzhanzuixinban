@@ -18,7 +18,7 @@
     </div>
 
     <!-- 章节选择对话框 -->
-    <el-dialog v-model="chapterSelectVisible" title="选择刷错题范围" width="500px">
+    <el-dialog v-model="chapterSelectVisible" title="选择刷错题范围" width="600px">
       <div class="chapter-select-content">
         <div class="chapter-select-header">
           <el-checkbox v-model="selectAllChapters" @change="handleSelectAll" style="font-weight: 500;">
@@ -38,6 +38,9 @@
             </div>
           </el-checkbox-group>
         </div>
+        <div class="shuffle-options-section">
+          <el-checkbox v-model="shuffleOptionsInDialog">打乱选项顺序</el-checkbox>
+        </div>
       </div>
       <template #footer>
         <el-button @click="chapterSelectVisible = false">取消</el-button>
@@ -49,16 +52,30 @@
     </el-dialog>
 
     <div class="card">
-      <div class="filter-bar" style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px;">
+      <div class="filter-bar" style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; align-items: center;">
         <el-select v-model="filters.chapter_id" placeholder="选择章节" style="width: 150px;" clearable @change="loadWrongQuestions">
           <el-option v-for="ch in chapters" :key="ch.id" :label="ch.name" :value="ch.id" />
         </el-select>
         <el-select v-model="filters.question_type_id" placeholder="选择题型" style="width: 150px;" clearable @change="loadWrongQuestions">
           <el-option v-for="qt in questionTypes" :key="qt.id" :label="qt.name" :value="qt.id" />
         </el-select>
+        <el-select v-model="filters.min_wrong_count" placeholder="错误次数" style="width: 130px;" clearable @change="loadWrongQuestions">
+          <el-option label="全部" :value="undefined" />
+          <el-option label="≥1次" :value="1" />
+          <el-option label="≥2次" :value="2" />
+          <el-option label="≥3次" :value="3" />
+          <el-option label="≥5次" :value="5" />
+        </el-select>
+        <div style="flex: 1;"></div>
+        <el-button v-if="selectedWrongQuestions.length > 0" type="danger" @click="batchRemove">
+          <el-icon><Delete /></el-icon>
+          批量移除({{ selectedWrongQuestions.length }})
+        </el-button>
+        <el-checkbox v-model="selectAll">全选</el-checkbox>
       </div>
 
-      <el-table :data="wrongQuestions" style="width: 100%" v-loading="loading">
+      <el-table :data="wrongQuestions" style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="50" />
         <el-table-column prop="question.id" label="ID" width="80" />
         <el-table-column prop="question.stem" label="题干" min-width="200">
           <template #default="{ row }">
@@ -68,7 +85,12 @@
         <el-table-column prop="question.question_type_name" label="题型" width="100" />
         <el-table-column prop="wrong_count" label="错误次数" width="100">
           <template #default="{ row }">
-            <el-tag type="danger">{{ row.wrong_count }}</el-tag>
+            <el-tag :type="getWrongCountTagType(row.wrong_count)">{{ row.wrong_count }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="reappearance_count" label="复现次数" width="100">
+          <template #default="{ row }">
+            <el-tag type="info">{{ row.reappearance_count || 0 }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="last_wrong_at" label="最近错误" width="160">
@@ -97,11 +119,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuizStore } from '@/store/quiz'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPlay, RefreshRight, Delete } from '@element-plus/icons-vue'
+import axios from 'axios'
 
 const router = useRouter()
 const store = useQuizStore()
@@ -114,26 +137,35 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
+const selectedWrongQuestions = ref([])
+const selectAll = ref(false)
+
 const filters = ref({
   chapter_id: null,
-  question_type_id: null
+  question_type_id: null,
+  min_wrong_count: undefined
 })
 
-// 章节选择相关
 const chapterSelectVisible = ref(false)
 const selectAllChapters = ref(false)
 const selectedChapterIds = ref([])
+const shuffleOptionsInDialog = ref(true)
 
 const selectedChapterCount = computed(() => {
   return selectedChapterIds.value.length
 })
 
-// 获取章节的错题数量
 const getChapterWrongCount = (chapterId) => {
   const chapterWrongQuestions = wrongQuestions.value.filter(wq => {
     return wq.question && wq.question.chapter_id === chapterId
   })
   return chapterWrongQuestions.length
+}
+
+const getWrongCountTagType = (count) => {
+  if (count >= 5) return 'danger'
+  if (count >= 3) return 'warning'
+  return 'info'
 }
 
 const formatTime = (timeStr) => {
@@ -144,11 +176,21 @@ const formatTime = (timeStr) => {
 const loadWrongQuestions = async () => {
   loading.value = true
   try {
-    const result = await store.loadWrongQuestions({
+    const params = {
       page: currentPage.value,
-      per_page: pageSize.value,
-      ...filters.value
-    })
+      per_page: pageSize.value
+    }
+    if (filters.value.chapter_id) {
+      params.chapter_id = filters.value.chapter_id
+    }
+    if (filters.value.question_type_id) {
+      params.question_type_id = filters.value.question_type_id
+    }
+    if (filters.value.min_wrong_count) {
+      params.min_wrong_count = filters.value.min_wrong_count
+    }
+    
+    const result = await store.loadWrongQuestions(params)
     wrongQuestions.value = result.data
     total.value = result.total
     chapters.value = store.chapters
@@ -159,6 +201,18 @@ const loadWrongQuestions = async () => {
     loading.value = false
   }
 }
+
+const handleSelectionChange = (selection) => {
+  selectedWrongQuestions.value = selection
+}
+
+watch(selectAll, (val) => {
+  if (val) {
+    selectedWrongQuestions.value = [...wrongQuestions.value]
+  } else {
+    selectedWrongQuestions.value = []
+  }
+})
 
 const showChapterSelectDialog = () => {
   selectedChapterIds.value = []
@@ -177,22 +231,20 @@ const handleSelectAll = (checked) => {
 const startPracticeWithChapters = async () => {
   chapterSelectVisible.value = false
   
-  // 如果没有选择章节，提示用户
   if (selectedChapterIds.value.length === 0) {
     ElMessage.warning('请至少选择一个章节')
     return
   }
   
-  // 将章节 ID 转换为整数数组并拼接成字符串
   const chapterIds = selectedChapterIds.value.map(id => parseInt(id))
   const chapterIdsStr = chapterIds.join(',')
   
-  // 直接跳转到练习页面，通过路由参数传递章节 ID
   router.push({
     path: '/practice/wrong',
     query: { 
       mode: 'wrong',
-      chapters: chapterIdsStr
+      chapters: chapterIdsStr,
+      shuffle_options: shuffleOptionsInDialog.value ? 'true' : 'false'
     }
   })
 }
@@ -212,6 +264,38 @@ const removeQuestion = async (row) => {
     loadWrongQuestions()
   } catch (error) {
     ElMessage.error('移除失败')
+  }
+}
+
+const batchRemove = async () => {
+  if (selectedWrongQuestions.value.length === 0) {
+    ElMessage.warning('请先选择要移除的题目')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要移除选中的 ${selectedWrongQuestions.value.length} 道错题吗？`,
+      '批量移除',
+      { type: 'warning' }
+    )
+    
+    const wrongIds = selectedWrongQuestions.value.map(wq => wq.id)
+    await axios.delete('/api/wrong-questions/batch', {
+      data: {
+        user_id: store.userId,
+        wrong_ids: wrongIds
+      }
+    })
+    
+    ElMessage.success(`已移除 ${wrongIds.length} 道错题`)
+    selectAll.value = false
+    selectedWrongQuestions.value = []
+    loadWrongQuestions()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('移除失败')
+    }
   }
 }
 
@@ -288,5 +372,12 @@ onMounted(() => {
 
 .chapter-wrong-count {
   float: right;
+}
+
+.shuffle-options-section {
+  margin-top: 15px;
+  padding: 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
 }
 </style>

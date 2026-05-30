@@ -187,6 +187,13 @@
             </el-select>
             <p class="config-hint">错题本中共 {{ wrongCount }} 道错题</p>
           </div>
+          <div class="config-item">
+            <label>打乱选项:</label>
+            <div class="switch-wrapper">
+              <el-switch v-model="config.shuffleOptions" />
+              <span class="switch-label">{{ config.shuffleOptions ? '已启用' : '已禁用' }}</span>
+            </div>
+          </div>
         </div>
 
         <el-button type="primary" size="large" @click="startPractice" :disabled="practiceMode === 'sequential' && config.chapterIds.length === 0">
@@ -786,25 +793,25 @@ const startPractice = async () => {
       })
       questions.value = result.data
     } else if (practiceMode.value === 'wrong') {
-      // 检查路由参数中是否有章节选择
       const chaptersParam = route.query.chapters
+      const shuffleOptionsParam = route.query.shuffle_options
+      const useShuffleOptions = shuffleOptionsParam === 'true' ? true : (shuffleOptionsParam === 'false' ? false : config.shuffleOptions)
+      
       let apiParams = {
         user_id: store.userId,
-        shuffle: true
+        shuffle: true,
+        shuffle_options: useShuffleOptions
       }
       
       if (chaptersParam) {
-        // 从路由参数获取章节 ID
         const chapterIds = chaptersParam.split(',').map(id => parseInt(id))
         console.log('DEBUG: Using route chapter selection:', chapterIds)
         apiParams.chapter_ids = chapterIds
       } else if (config.chapterIds.length > 0) {
-        // 用户在练习页面选择了章节，转换为整数
         const chapterIds = config.chapterIds.map(id => parseInt(id))
         console.log('DEBUG: Using config chapter selection:', chapterIds)
         apiParams.chapter_ids = chapterIds
       } else {
-        // 普通的错题练习（所有错题）
         console.log('DEBUG: Loading all wrong questions')
       }
       
